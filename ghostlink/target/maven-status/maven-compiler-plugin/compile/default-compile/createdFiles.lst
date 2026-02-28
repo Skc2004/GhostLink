@@ -1,2 +1,5 @@
-io\ghostlink\core\MappedArena.class
+io\ghostlink\GhostProducer.class
+io\ghostlink\GhostConsumer.class
+io\ghostlink\core\GhostRingBuffer.class
 io\ghostlink\App.class
+io\ghostlink\core\MappedArena.class
