@@ -22,16 +22,18 @@ public class GhostProducer implements AutoCloseable {
         }
     }
 
-    /**
-     * Publishes a single long value.
-     * Block / Spin until space is available.
-     * 
-     * @param value data
-     */
     public void publish(long value) {
         long offset;
+        int idleCounter = 0;
         while ((offset = ringBuffer.tryClaim()) < 0) {
-            Thread.onSpinWait(); // Busy-spin for lowest latency
+            if (idleCounter < 100) {
+                Thread.onSpinWait();
+            } else if (idleCounter < 1000) {
+                Thread.yield();
+            } else {
+                java.util.concurrent.locks.LockSupport.parkNanos(1);
+            }
+            idleCounter++;
         }
 
         segment.set(ValueLayout.JAVA_LONG, offset, value);

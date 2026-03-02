@@ -29,7 +29,15 @@ public class GhostRingBuffer {
     // Local cached sequences to avoid touching shared memory unnecessarily (reduces
     // L3 cache ping-pong)
     private long headCache = 0;
+
+    // Cache-line padding to defeat false-sharing on the JVM instance itself
+    private long p01, p02, p03, p04, p05, p06, p07, p08;
+    private long p09, p10, p11, p12, p13, p14, p15, p16;
+
     private long tailCache = 0;
+
+    private long q01, q02, q03, q04, q05, q06, q07, q08;
+    private long q09, q10, q11, q12, q13, q14, q15, q16;
 
     public GhostRingBuffer(MemorySegment segment, int capacity, int slotSize) {
         if (Integer.bitCount(capacity) != 1) {

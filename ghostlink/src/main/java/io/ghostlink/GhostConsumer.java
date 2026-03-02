@@ -19,15 +19,16 @@ public class GhostConsumer implements AutoCloseable {
         this.ringBuffer = new GhostRingBuffer(segment, capacity, slotSize);
     }
 
-    /**
-     * Polls a single long value or blocks/spins until available.
-     * 
-     * @return the consumed value
-     */
     public long poll() {
         long offset;
+        int idleCounter = 0;
         while ((offset = ringBuffer.tryPoll()) < 0) {
-            Thread.onSpinWait(); // Busy-spin for lowest latency
+            if (idleCounter < 1000) {
+                Thread.onSpinWait();
+            } else {
+                Thread.yield();
+            }
+            idleCounter++;
         }
 
         long value = segment.get(ValueLayout.JAVA_LONG, offset);
