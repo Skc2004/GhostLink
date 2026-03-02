@@ -21,14 +21,8 @@ public class GhostConsumer implements AutoCloseable {
 
     public long poll() {
         long offset;
-        int idleCounter = 0;
         while ((offset = ringBuffer.tryPoll()) < 0) {
-            if (idleCounter < 1000) {
-                Thread.onSpinWait();
-            } else {
-                Thread.yield();
-            }
-            idleCounter++;
+            Thread.onSpinWait(); // Hard busy-spin
         }
 
         long value = segment.get(ValueLayout.JAVA_LONG, offset);

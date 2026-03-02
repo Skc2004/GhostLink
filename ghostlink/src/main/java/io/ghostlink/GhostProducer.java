@@ -24,16 +24,8 @@ public class GhostProducer implements AutoCloseable {
 
     public void publish(long value) {
         long offset;
-        int idleCounter = 0;
         while ((offset = ringBuffer.tryClaim()) < 0) {
-            if (idleCounter < 100) {
-                Thread.onSpinWait();
-            } else if (idleCounter < 1000) {
-                Thread.yield();
-            } else {
-                java.util.concurrent.locks.LockSupport.parkNanos(1);
-            }
-            idleCounter++;
+            Thread.onSpinWait(); // Hard busy-spin
         }
 
         segment.set(ValueLayout.JAVA_LONG, offset, value);

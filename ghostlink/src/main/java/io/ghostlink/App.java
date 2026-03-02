@@ -83,6 +83,9 @@ public class App {
             }
         });
 
+        consumerThread.setPriority(Thread.MAX_PRIORITY);
+        producerThread.setPriority(Thread.MAX_PRIORITY);
+
         consumerThread.start();
         Thread.sleep(500); // Allow consumer init
         producerThread.start();
