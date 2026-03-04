@@ -6,8 +6,12 @@ import java.util.concurrent.CyclicBarrier;
 public class App {
 
     private static final String DATA_FILE = "target/ghost_ipc.data";
-    private static final int MSG_COUNT = 5_000_000;
-    private static final int WARMUP_COUNT = 1_000_000;
+    private static final int MSG_COUNT_PER_PRODUCER = 10_000;
+    private static final int WARMUP_COUNT = 1_000;
+
+    // MPMC Configuration:
+    private static final int PRODUCER_COUNT = 10;
+    private static final int CONSUMER_COUNT = 10;
 
     public static void main(String[] args) throws Exception {
         System.out.println("Starting GhostLink Latency Benchmark...");
@@ -16,107 +20,121 @@ public class App {
         if (f.exists())
             f.delete();
         f.getParentFile().mkdirs();
-        // Why capacity = 2?
-        // A huge capacity (like 1,000,000) allows the producer to far outpace the
-        // consumer.
-        // This leads to huge queue build-ups where a message sits in the queue for 3+
-        // milliseconds
-        // before the consumer ever reads it, severely skewing the average latency
-        // higher.
-        // By restricting capacity to 2 slots, we physically force the producer to pace
-        // itself
-        // to the consumer's read speed. This prevents massive queueing delays and
-        // measures true
-        // underlying IPC latency instead of queue-wait time.
-        // NOTE ON VARIANCE (e.g., 96ns vs 861ns): Variance here is primarily caused by
-        // OS thread
-        // scheduling jitter. We are using standard Java threads on a non-Real-Time OS.
-        // If the producer
-        // thread gets scheduled slightly ahead of the consumer thread, it spins out its
-        // 2 slots and blocks,
-        // accumulating microsecond delays until the consumer thread wakes up. When
-        // thread wake-ups
-        // perfectly align, you see ~100ns averages.
-        int capacity = 2; // 2 slots instead of 1M to prevent giant queue build-ups causing latency
+
+        int capacity = 4096; // Increased capacity to give 10 producers room to breathe
         int slotSize = Long.BYTES;
-        CyclicBarrier barrier = new CyclicBarrier(2);
 
-        Thread producerThread = new Thread(() -> {
-            try (GhostProducer producer = new GhostProducer(DATA_FILE, capacity, slotSize, true)) {
-                System.out.println("Producer started...");
+        java.util.concurrent.CountDownLatch consumerReady = new java.util.concurrent.CountDownLatch(CONSUMER_COUNT);
 
-                for (int i = 0; i < WARMUP_COUNT; i++) {
-                    producer.publish(0);
-                }
+        Thread[] producers = new Thread[PRODUCER_COUNT];
+        for (int pId = 0; pId < PRODUCER_COUNT; pId++) {
+            final int id = pId;
+            producers[pId] = new Thread(() -> {
+                boolean init = (id == 0);
+                try {
+                    // Wait for consumer to map file and optionally initialize based on id
+                    if (!init)
+                        consumerReady.await();
 
-                System.out.println("Producer Warmup Finish");
-                barrier.await(); // Wait for consumer
+                    try (GhostProducer producer = new GhostProducer(DATA_FILE, capacity, slotSize, init)) {
+                        System.out.println("Producer " + id + " started...");
 
-                System.out.println("Producer Benchmark Run Started");
-                int mask = 8191; // Fast bitmask instead of modulo division to prevent CPU stalls
-                for (int i = 0; i < MSG_COUNT; i++) {
-                    long timestamp = (i & mask) == 0 ? System.nanoTime() : 0L;
-                    producer.publish(timestamp);
-                }
+                        if (init)
+                            consumerReady.await();
 
-                // End Signal
-                producer.publish(-1);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        });
+                        for (int i = 0; i < WARMUP_COUNT; i++) {
+                            producer.publish(0);
+                        }
 
-        Thread consumerThread = new Thread(() -> {
-            try (GhostConsumer consumer = new GhostConsumer(DATA_FILE, capacity, slotSize)) {
-                System.out.println("Consumer started...");
+                        if (id == 0)
+                            System.out.println("MPMC Benchmark Run Started");
 
-                for (int i = 0; i < WARMUP_COUNT; i++) {
-                    consumer.poll();
-                }
+                        int mask = 8191;
+                        for (int i = 0; i < MSG_COUNT_PER_PRODUCER; i++) {
+                            long timestamp = (i & mask) == 0 ? System.nanoTime() : 0L;
+                            producer.publish(timestamp);
+                        }
 
-                System.out.println("Consumer Warmup Finish");
-                barrier.await(); // Wait for producer to engage
-
-                long minLatency = Long.MAX_VALUE;
-                long maxLatency = 0;
-                long totalLatency = 0;
-
-                long value;
-                int measuredCount = 0;
-                while ((value = consumer.poll()) != -1) {
-                    if (value != 0) {
-                        long now = System.nanoTime();
-                        long latency = now - value;
-                        if (latency < minLatency && latency > 0)
-                            minLatency = latency;
-                        if (latency > maxLatency)
-                            maxLatency = latency;
-                        totalLatency += latency;
-                        measuredCount++;
+                        if (id == 0) {
+                            for (int c = 0; c < CONSUMER_COUNT; c++) {
+                                producer.publish(-1);
+                            }
+                        }
                     }
+                } catch (Exception e) {
+                    e.printStackTrace();
                 }
+            });
+            producers[pId].setPriority(Thread.MAX_PRIORITY);
+        }
 
-                double avgLatency = measuredCount > 0 ? (double) totalLatency / measuredCount : 0.0;
+        Thread[] consumers = new Thread[CONSUMER_COUNT];
+        for (int cId = 0; cId < CONSUMER_COUNT; cId++) {
+            final int id = cId;
+            consumers[cId] = new Thread(() -> {
+                try {
+                    // Small sleep so Producer 0 touches the file first to create it
+                    Thread.sleep(100);
 
-                System.out.println("====== BENCHMARK RESULTS ======");
-                System.out.printf("Messages: %,d\n", MSG_COUNT);
-                System.out.println(String.format("Minimum Latency: %,d ns", minLatency));
-                System.out.println(String.format("Average Latency: %,.2f ns", avgLatency));
-                System.out.println(String.format("Maximum Latency: %,d ns", maxLatency));
-                System.out.println("===============================");
+                    try (GhostConsumer consumer = new GhostConsumer(DATA_FILE, capacity, slotSize)) {
+                        System.out.println("Consumer " + id + " started...");
+                        consumerReady.countDown(); // Signal we are bound
 
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        });
+                        for (int i = 0; i < WARMUP_COUNT; i++) {
+                            long val = consumer.poll();
+                            if (val == -1)
+                                break;
+                        }
 
-        consumerThread.setPriority(Thread.MAX_PRIORITY);
-        producerThread.setPriority(Thread.MAX_PRIORITY);
+                        long minLatency = Long.MAX_VALUE;
+                        long maxLatency = 0;
+                        long totalLatency = 0;
+                        int measuredCount = 0;
 
-        consumerThread.start();
-        producerThread.start();
+                        while (true) {
+                            long value = consumer.poll();
+                            if (value == -1) {
+                                break;
+                            }
 
-        producerThread.join();
-        consumerThread.join();
+                            if (value != 0) {
+                                long now = System.nanoTime();
+                                long latency = now - value;
+                                if (latency < minLatency && latency > 0)
+                                    minLatency = latency;
+                                if (latency > maxLatency)
+                                    maxLatency = latency;
+                                totalLatency += latency;
+                                measuredCount++;
+                            }
+                        }
+
+                        double avgLatency = measuredCount > 0 ? (double) totalLatency / measuredCount : 0.0;
+
+                        System.out.println("--- Consumer " + id + " Results ---");
+                        System.out.println(String.format("Average Latency: %,.2f ns", avgLatency));
+                        System.out.println(String.format("Minimum Latency: %,d ns", minLatency));
+
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            });
+            consumers[cId].setPriority(Thread.MAX_PRIORITY);
+        }
+
+        for (Thread c : consumers)
+            c.start();
+        // Slight delay to ensure consumers map the file after producer 0 creates it
+        Thread.sleep(500);
+        for (Thread p : producers)
+            p.start();
+
+        for (Thread p : producers)
+            p.join();
+
+        // After producers are done and have sent end signals, we wait for consumers
+        for (Thread c : consumers)
+            c.join();
     }
 }
