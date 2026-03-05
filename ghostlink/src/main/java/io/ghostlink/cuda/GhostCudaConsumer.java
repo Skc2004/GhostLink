@@ -12,22 +12,20 @@ public class GhostCudaConsumer {
     private final int consumerId;
     private final MemorySegment vram;
     private final long[] localSeq = new long[10];
-    private final MemorySegment stagingControlBlock;
-    private final MemorySegment stagingData;
+    private final MemorySegment stagingAll;
 
     public GhostCudaConsumer(int consumerId, GhostCudaFabric fabric) {
         this.consumerId = consumerId;
         this.vram = fabric.getSegment();
-        this.stagingControlBlock = Arena.global().allocate(GhostCudaFabric.CONTROL_BLOCK_SIZE);
-        this.stagingData = Arena.global().allocate(Long.BYTES);
+        this.stagingAll = Arena.global().allocate(GhostCudaFabric.TOTAL_SIZE);
     }
 
     /**
      * Complete SDM network control block evaluation in 1 PCIe fetch round trip.
      */
     public long poll() {
-        // 1. Copy the entire 800-byte Control Block to host memory
-        GhostCudaFabric.memcpyDtoH(stagingControlBlock, vram.address(), GhostCudaFabric.CONTROL_BLOCK_SIZE);
+        // 1. Copy the entire 1.6KB VRAM topology (Control AND Data) to host memory
+        GhostCudaFabric.memcpyDtoH(stagingAll, vram.address(), GhostCudaFabric.TOTAL_SIZE);
 
         // Loop over all 10 independent lane flags
         for (int pId = 0; pId < 10; pId++) {
@@ -35,14 +33,12 @@ public class GhostCudaConsumer {
             long controlOffset = index * Long.BYTES;
 
             // 2. Compare against locally cached sequence flags in native off-heap memory
-            long seq = stagingControlBlock.get(ValueLayout.JAVA_LONG, controlOffset);
+            long seq = stagingAll.get(ValueLayout.JAVA_LONG, controlOffset);
             if (seq > localSeq[pId]) {
 
-                // 3. If a flag is incremented, fetch the specific payload from the VRAM Data
-                // Block
+                // 3. Extract payload directly from identical sequential DMA fetch
                 long dataOffset = GhostCudaFabric.CONTROL_BLOCK_SIZE + (index * Long.BYTES);
-                GhostCudaFabric.memcpyDtoH(stagingData, vram.address() + dataOffset, Long.BYTES);
-                long payload = stagingData.get(ValueLayout.JAVA_LONG, 0);
+                long payload = stagingAll.get(ValueLayout.JAVA_LONG, dataOffset);
 
                 localSeq[pId] = seq;
                 return payload;

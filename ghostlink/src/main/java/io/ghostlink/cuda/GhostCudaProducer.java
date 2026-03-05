@@ -31,10 +31,10 @@ public class GhostCudaProducer {
         stagingBuffer.set(ValueLayout.JAVA_LONG, 0, payload);
         GhostCudaFabric.memcpyHtoD(vram.address() + dataOffset, stagingBuffer, Long.BYTES);
 
-        // 2. Call cuCtxSynchronize() to flush the PCIe buffer to VRAM
-        GhostCudaFabric.synchronize();
+        // (cuMemcpyHtoD is completely synchronous for the Host and queued linearly,
+        // ensuring Data reaches VRAM prior to Control flag)
 
-        // 3. Increment the sequence flag in Control Block
+        // 2. Increment the sequence flag in Control Block
         long controlOffset = index * Long.BYTES;
         long nextSeq = ++localSeq[targetConsumerId];
         stagingBuffer.set(ValueLayout.JAVA_LONG, 0, nextSeq);
