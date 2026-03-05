@@ -21,7 +21,7 @@ public class App {
             f.delete();
         f.getParentFile().mkdirs();
 
-        int capacity = 4096; // Increased capacity to give 10 producers room to breathe
+        int capacity = 65536; // Increased capacity to give 10 producers room to breathe
         int slotSize = Long.BYTES;
 
         java.util.concurrent.CountDownLatch consumerReady = new java.util.concurrent.CountDownLatch(CONSUMER_COUNT);
