@@ -59,6 +59,13 @@ public class GhostCudaFabric implements AutoCloseable {
     private static final MethodHandle cuMemFree = downcall("cuMemFree_v2",
             FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG));
 
+    private static final MethodHandle cuMemcpyHtoD = downcall("cuMemcpyHtoD_v2",
+            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS,
+                    ValueLayout.JAVA_LONG));
+    private static final MethodHandle cuMemcpyDtoH = downcall("cuMemcpyDtoH_v2",
+            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG,
+                    ValueLayout.JAVA_LONG));
+
     // Spatial Division Multiplexed (SDM) crossbar - 100 dedicated point-to-point
     // lanes
     public static final int CONTROL_BLOCK_SIZE = 100 * Long.BYTES; // 800 bytes exactly
@@ -90,9 +97,10 @@ public class GhostCudaFabric implements AutoCloseable {
             MemorySegment dptrSeg = arena.allocate(ValueLayout.JAVA_LONG);
 
             if (isProducerHost) {
-                // Phase 2: Direct FFM call to CUDA Driver cuMemAlloc(...)
-                if (cuMemAlloc != null)
+                // Phase 2: Direct FFM call to CUDA Driver cuMemAlloc
+                if (cuMemAlloc != null) {
                     check((int) cuMemAlloc.invokeExact(dptrSeg, (long) TOTAL_SIZE));
+                }
                 this.devicePtr = dptrSeg.get(ValueLayout.JAVA_LONG, 0);
 
                 MemorySegment handleSeg = arena.allocate(64); // CU_IPC_HANDLE_SIZE = 64
@@ -116,14 +124,14 @@ public class GhostCudaFabric implements AutoCloseable {
                 this.isOwner = false;
             }
 
-            // Bind VRAM memory mapped pointer safely
+            // Bind VRAM memory mapped pointer safely (NOTE: Direct JVM CPU dereferencing of
+            // this segment will cause EXCEPTION_ACCESS_VIOLATION on Windows)
             this.vramSegment = MemorySegment.ofAddress(devicePtr).reinterpret(TOTAL_SIZE, arena, null);
 
-            // Allocate and initialize Control Block space
-            if (isOwner && cuMemAlloc != null) {
-                for (int i = 0; i < CONTROL_BLOCK_SIZE; i++) {
-                    vramSegment.set(ValueLayout.JAVA_BYTE, i, (byte) 0);
-                }
+            // Allocate and initialize Control Block space using cuMemcpyHtoD
+            if (isOwner && cuMemcpyHtoD != null) {
+                MemorySegment zeroes = arena.allocate(CONTROL_BLOCK_SIZE);
+                check((int) cuMemcpyHtoD.invokeExact(devicePtr, zeroes, (long) CONTROL_BLOCK_SIZE));
             }
         } catch (Throwable t) {
             throw new RuntimeException("CUDA IPC Initialization Failed", t);
@@ -139,6 +147,24 @@ public class GhostCudaFabric implements AutoCloseable {
                 check((int) cuCtxSynchronize.invokeExact());
         } catch (Throwable t) {
             throw new RuntimeException("CUDA Context Synchronize Failed", t);
+        }
+    }
+
+    public static void memcpyHtoD(long dstDevice, MemorySegment srcHost, long byteCount) {
+        try {
+            if (cuMemcpyHtoD != null)
+                check((int) cuMemcpyHtoD.invokeExact(dstDevice, srcHost, byteCount));
+        } catch (Throwable t) {
+            throw new RuntimeException("cuMemcpyHtoD Failed", t);
+        }
+    }
+
+    public static void memcpyDtoH(MemorySegment dstHost, long srcDevice, long byteCount) {
+        try {
+            if (cuMemcpyDtoH != null)
+                check((int) cuMemcpyDtoH.invokeExact(dstHost, srcDevice, byteCount));
+        } catch (Throwable t) {
+            throw new RuntimeException("cuMemcpyDtoH Failed", t);
         }
     }
 

@@ -112,5 +112,31 @@ We provide an inline threading benchmark mimicking the exact layout and performa
 
 ```bash
 mvn clean compile
-java --enable-native-access=ALL-UNNAMED -cp target/classes io.ghostlink.App
+```
+
+To run the full 100-lane PCIe NVLink Crossbar benchmark:
+
+**Terminal 1:**
+```bash
+java --enable-native-access=ALL-UNNAMED -cp target/classes io.ghostlink.CudaApp consumer
+```
+
+**Terminal 2:**
+```bash
+java --enable-native-access=ALL-UNNAMED -cp target/classes io.ghostlink.CudaApp producer
+```
+
+Expected Output for Consumer node bypassing JVM SEH faults with Latest-Value Broadcast:
+```
+Starting GhostCuda Process B (Single Threaded Multiplexed Consumers)...
+Consumer IPC mapping complete. Non-blocking poll online.
+Warming up...
+Running Benchmark...
+====== VRAM CROSSBAR RESULTS ======
+Ticks Processed: XXXXX (Others skipped cleanly in Latest-Value SDM)
+Lanes:           10 Producers x 10 Consumers (100 Active SDM Lanes)
+Min Lat.:        14000 ns
+Avg Lat.:        186332 ns
+Max Lat.:        18659400 ns
+===================================
 ```

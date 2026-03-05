@@ -3,5 +3,9 @@ C:\Users\choud\DevVault\GhostLink\ghostlink\src\main\java\io\ghostlink\core\Adap
 C:\Users\choud\DevVault\GhostLink\ghostlink\src\main\java\io\ghostlink\core\GhostRingBuffer.java
 C:\Users\choud\DevVault\GhostLink\ghostlink\src\main\java\io\ghostlink\core\MappedArena.java
 C:\Users\choud\DevVault\GhostLink\ghostlink\src\main\java\io\ghostlink\core\WaitStrategy.java
+C:\Users\choud\DevVault\GhostLink\ghostlink\src\main\java\io\ghostlink\cuda\GhostCudaConsumer.java
+C:\Users\choud\DevVault\GhostLink\ghostlink\src\main\java\io\ghostlink\cuda\GhostCudaFabric.java
+C:\Users\choud\DevVault\GhostLink\ghostlink\src\main\java\io\ghostlink\cuda\GhostCudaProducer.java
+C:\Users\choud\DevVault\GhostLink\ghostlink\src\main\java\io\ghostlink\CudaApp.java
 C:\Users\choud\DevVault\GhostLink\ghostlink\src\main\java\io\ghostlink\GhostConsumer.java
 C:\Users\choud\DevVault\GhostLink\ghostlink\src\main\java\io\ghostlink\GhostProducer.java

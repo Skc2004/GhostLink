@@ -1,7 +1,11 @@
 io\ghostlink\App.class
 io\ghostlink\core\AdaptiveBusyWaitStrategy.class
 io\ghostlink\core\MappedArena.class
+io\ghostlink\cuda\GhostCudaProducer.class
 io\ghostlink\GhostProducer.class
 io\ghostlink\GhostConsumer.class
 io\ghostlink\core\GhostRingBuffer.class
 io\ghostlink\core\WaitStrategy.class
+io\ghostlink\cuda\GhostCudaConsumer.class
+io\ghostlink\cuda\GhostCudaFabric.class
+io\ghostlink\CudaApp.class
